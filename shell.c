@@ -59,6 +59,22 @@ void addToHistory(int commandNo, char* command, struct timespec startTime, struc
     }
 }
 
+void sigchld_handler(int signo) {
+    int status;
+    pid_t terminated_pid;
+
+    // Wait for any child process to exit
+    terminated_pid = waitpid(-1, &status, WNOHANG);
+
+    if (terminated_pid > 0) {
+        // Child process has terminated
+        // Send a custom signal (e.g., SIGUSR1) to the scheduler
+        union sigval value;
+        value.sival_int = (int)terminated_pid;
+        sigqueue(scheduler, SIGUSR1, value);
+    }
+}
+
 int launch(char** command, int words, int background) {
      printf("%s %s\n",command[0],command[1]);
     if (strcmp(command[0],"Submit")==0){
@@ -69,7 +85,7 @@ int launch(char** command, int words, int background) {
             perror("fork failed!");
         }
         else if (pid==0){
-            pause();
+            raise(SIGSTOP);
             //waiting to receive signal from scheduler.
             execvp(command[1],command_i);
         }
@@ -177,6 +193,13 @@ int launch(char** command, int words, int background) {
 
 
 int main(int argc, char* argv[]) {
+
+    struct sigaction sa;
+    sa.sa_handler = sigchld_handler;
+    sa.sa_flags = SA_RESTART | SA_NOCLDSTOP;
+    sigaction(SIGCHLD, &sa, NULL);
+
+
     int NCPU=atoi(argv[1]);
     int Time_SLICE=atoi(argv[2]);
     scheduler = fork();
@@ -184,18 +207,9 @@ int main(int argc, char* argv[]) {
         perror("fork failed!");
     }
     else if (scheduler==0){
-        int sid= setsid();
-        if (sid==-1){
-            perror("setsid failed!");
-        }
-
-        close(STDIN_FILENO);
-       // close(STDOUT_FILENO);
-        close(STDERR_FILENO);
-
         scheduler_main(NCPU,Time_SLICE);
     }
-
+    printf("%d: scheduler pid",scheduler);
     int commandno = 1;
         do {
             char* argv[100];
