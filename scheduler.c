@@ -11,6 +11,7 @@
 #define _XOPEN_SOURCE 700
 #define MAX_QUEUE_SIZE 100
 #define SIG_ADD_PROCESS SIGUSR1
+#define MAX_PROCESSES 100
 typedef struct {
     int front, rear, size;
     int array[MAX_QUEUE_SIZE];
@@ -100,7 +101,17 @@ void writeQueueToFile(const char* filename, CircularQueue* queue) {
     close(fd);
 }
 
+void scheduleProcess(int pid) {
+    // Send SIGCONT to start the process
+    kill(pid, SIGCONT);
+    printf("Scheduled process with PID %d\n", pid);
+}
 
+void stopProcess(int pid) {
+    // Send SIGSTOP to stop the process
+    kill(pid, SIGSTOP);
+    printf("Stopped process with PID %d\n", pid);
+}
 // void displayQueue(CircularQueue* queue) {
 //     if (isEmpty(queue)) {
 //         printf("Queue is empty.\n");
@@ -151,8 +162,40 @@ void scheduler_main(int NCPU,int TSLICE){
     sa.sa_sigaction = addProcessHandler;
     sigaction(SIG_ADD_PROCESS, &sa, NULL);
     readyQueue = initQueue();
+    int z=0;
+    int executingProcesses[MAX_PROCESSES] = {0};
     while (1){
-        int i = 1;
+        if (isEmpty(readyQueue)) {
+            // No processes in the ready queue, so sleep for the time quantum
+            sleep(TSLICE * 1000);
+        } 
+        else {
+            // For all available CPU resources
+            sleep(TSLICE * 1000);
+            int i;
+            for (i = 0; i < NCPU && !isEmpty(readyQueue); i++) {
+                int pid = dequeue(readyQueue);
+                scheduleProcess(pid);
+                executingProcesses[i] = pid;
+            }
+            fflush(stdout);
+            sleep(TSLICE * 1000);
+            for (int i=readyQueue->front;i<readyQueue->size;i++){
+                     printf("PID: %d\n",readyQueue->array[i]);
+            }
+            fflush(stdout);
+            // Stop the processes and add them back to the ready queue
+            for (i = 0; i < NCPU; i++) {
+                if (executingProcesses[i] != 0) {
+                    stopProcess(executingProcesses[i]);
+                    enqueue(readyQueue, executingProcesses[i]);
+                    executingProcesses[i] = 0;
+                }
+            }
+            fflush(stdout);
+        }
     }
+            // Sleep for the time quantum (TSLICE) while waiting for processes to execute.
+// Sleep for the time quantum.
 }
-
+    
