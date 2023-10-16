@@ -1,0 +1,30 @@
+Contribution:
+Shaurya Parashar: Designed the solution, implemented the solution, Debugged the code.
+
+Github repo link:https://github.com/Shaurya22475/OS-assignments/tree/main
+
+Design of the scheduler: 
+I have designed this scheduler using only signals for interprocess communication
+
+First the shell is launched with values of NCPU and TSLICE as command line inputs. The shell forks and in the child process calls the 
+scheduler main function. When a process is submitted to the shell, the shell forks and creates this process and sends the pid of this process to the 
+scheduler process. The newly created process raises a Sigstop signal to stop it's execution until it recieves a signal from the scheduler.
+
+The scheduler process firstly initialises the four readyQueues for 4 different priority processes. When it recieves the signal from shell to add a process
+it checks the priority of the process and accordingly creates a processinfo object and stores in the appropriate queue.
+The scheduler runs in an infinite loop and first goes through the 4 readyQueues in order of decreasing priority to see if that queue has any processes to schedule.
+This it does NCPU number of times because that many processors are available to us to run our executables. All these processes are sent sigcont signal and there pids 
+are stored in an array of executingProcesses. After scheduling(sending SIGCONT signal), to all possible processes,
+the scheduler waits for the time slice, during this time slice the scheduled process execute. Then the scheduler goes through the executingProcesses and sends the SIGSTOP signal to 
+them, then the scheduler checks if the isterminated value of the process is 0 or 1. A Value of 1 indicates that process has terminated. If process has terminated it is not enqueued back to the 
+queue, but if the process has not terminated then it is enqueued back to the appropriate readyQueue (according to it's priority value.).
+
+The heuristic I have used for priorities is that I have maintained four readyQueues each to store processes of different priorities. The processes in the queue with the highest priority are scheduled first then
+the processes in the queue with lower priorities and so on. Within a queue of a certain priority the processes scheduled in a round robin fashion.
+
+Now I describe how the scheduler comes to know if a process has actually terminated. When a process terminates the OS sends a SIGCHILD signal to it's parent.
+In our case, the parent of the processes(which run the executable) is the shell. So the shell receives this signal. In the shell I catch this signal (it is ignored by default), and in the signal handler
+I sent a custom signal to the scheduler indicating that this process terminated. Now the scheduler catches this custom signal and sets the isterminated value of the process to 1.
+
+Limitation: Sometimes when multiple SIGCHILD signals are sent to the shell, the shell may not be able to catch the all thus a terminated process still 
+pesists in our readyqueue and wastes cpu resources.
