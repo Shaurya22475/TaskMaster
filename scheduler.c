@@ -13,10 +13,38 @@
 #define SIG_ADD_PROCESS SIGUSR1
 #define MAX_PROCESSES 100
 typedef struct {
+    int pid;          // Process ID
+    struct timespec startTime;
+    struct timespec endTime;
+    int nooftimeslices;
+    int priority;
+    int isTerminated; // Flag to indicate if the process has terminated
+} ProcessInfo;
+
+typedef struct {
     int front, rear, size;
-    int array[MAX_QUEUE_SIZE];
+    ProcessInfo array[MAX_QUEUE_SIZE];
 } CircularQueue;
+
 int fd;
+
+CircularQueue* readyQueue1;
+CircularQueue* readyQueue2;
+CircularQueue* readyQueue3;
+CircularQueue* readyQueue4;
+
+ProcessInfo executingProcesses[MAX_PROCESSES]={0};  
+
+// Function to initialize the process structure
+ProcessInfo createProcessInfo(int pid) {
+    ProcessInfo process;
+    process.pid = pid;
+    clock_gettime(CLOCK_MONOTONIC, &process.startTime);
+    process.endTime.tv_sec = 0;
+    process.endTime.tv_nsec = 0;
+    process.isTerminated = 0;
+    return process;
+}
 CircularQueue* initQueue() {
     CircularQueue* queue = (CircularQueue*)malloc(sizeof(CircularQueue));
     if (queue == NULL) {
@@ -28,7 +56,12 @@ CircularQueue* initQueue() {
     return queue;
 }
 
-CircularQueue* readyQueue;
+int min(int a, int b){
+    if (a >= b){
+        return b;
+    }
+    return a;
+}
 
 int isEmpty(CircularQueue* queue) {
     return (queue->size == 0);
@@ -38,7 +71,7 @@ int isFull(CircularQueue* queue) {
     return (queue->size == MAX_QUEUE_SIZE);
 }
 
-void enqueue(CircularQueue* queue, int pid) {
+void enqueue(CircularQueue* queue, ProcessInfo *process) {
     if (isFull(queue)) {
         fprintf(stderr, "Queue is full. Cannot enqueue.\n");
         return;
@@ -46,72 +79,47 @@ void enqueue(CircularQueue* queue, int pid) {
 
     if (isEmpty(queue)) {
         queue->front = queue->rear = 0;
-        queue->array[queue->rear] = pid;
+        queue->array[queue->rear] = *process;
     } else {
         queue->rear = (queue->rear + 1) % MAX_QUEUE_SIZE;
-        queue->array[queue->rear] = pid;
+        queue->array[queue->rear] = *process;
     }
 
     queue->size++;
 }
+ProcessInfo dequeue(CircularQueue* queue) {
+    ProcessInfo emptyProcess; // A placeholder for an empty process
+    emptyProcess.pid = 0;    // Set PID to 0 to indicate an empty slot
 
-int dequeue(CircularQueue* queue) {
     if (isEmpty(queue)) {
         fprintf(stderr, "Queue is empty. Cannot dequeue.\n");
-        return -1;
+        return emptyProcess;
     }
-
-    int frontPid = queue->array[queue->front];
-
+    ProcessInfo frontProcess = queue->array[queue->front];
     if (queue->front == queue->rear) {
         queue->front = queue->rear = -1;
     } else {
         queue->front = (queue->front + 1) % MAX_QUEUE_SIZE;
     }
-
     queue->size--;
-
-    return frontPid;
+    return frontProcess;
 }
 
-void writeQueueToFile(const char* filename, CircularQueue* queue) {
-    int fd = open(filename, O_WRONLY | O_CREAT, 0666);
-    write(fd,"Let's see",sizeof("Let's see"));
-    if (fd == -1) {
-
-    }
-
-    if (isEmpty(queue)) {
-        write(fd, "Queue is empty.\n", strlen("Queue is empty.\n"));
-    } else {
-        char buffer[256]; // Adjust the buffer size as needed
-        int i = queue->front;
-        int length = 0;
-
-        while (i != queue->rear) {
-            length = snprintf(buffer, sizeof(buffer), "PID %d, ", queue->array[i]);
-            write(fd, buffer, length);
-            i = (i + 1) % MAX_QUEUE_SIZE;
-        }
-
-        length = snprintf(buffer, sizeof(buffer), "PID %d\n", queue->array[i]);
-        write(fd, buffer, length);
-    }
-
-    close(fd);
-}
-
-void scheduleProcess(int pid) {
+void scheduleProcess(ProcessInfo* process) {
     // Send SIGCONT to start the process
-    kill(pid, SIGCONT);
-    printf("Scheduled process with PID %d\n", pid);
+    kill(process->pid, SIGCONT);
+
+
+    process->isTerminated = 0; // Mark the process as not terminated
+    printf("Scheduled process with PID %d\n", process->pid);
 }
 
-void stopProcess(int pid) {
+void stopProcess(ProcessInfo* process) {
     // Send SIGSTOP to stop the process
-    kill(pid, SIGSTOP);
-    printf("Stopped process with PID %d\n", pid);
+    kill(process->pid, SIGSTOP);
+    printf("Stopped process with PID %d\n", process->pid);
 }
+
 // void displayQueue(CircularQueue* queue) {
 //     if (isEmpty(queue)) {
 //         printf("Queue is empty.\n");
@@ -145,57 +153,149 @@ void stopProcess(int pid) {
 // }
 
 void addProcessHandler(int signo, siginfo_t *info, void *context) {
-    write(fd,"\naur kuch batoa!!",sizeof("\naur kuch batoa!!"));
     if (signo == SIG_ADD_PROCESS) {
-        int pid = info->si_int;
-        enqueue(readyQueue, pid);
-    }
-    writeQueueToFile("/home/flameblazer/Documents/SimpleShell/new.txt",readyQueue);
-}
+        int pidtimespriority = info->si_int;
+        printf("Pidtimesprority from shell: %d",pidtimespriority);
+        int sch = getpid();
+        printf("The scheduler pid: %d",sch);
+        //Just remember to make the necessary change in the
+        int prior = (int)(pidtimespriority/sch);
+        int pid = (int)pidtimespriority/prior;
+        ProcessInfo* process = (ProcessInfo*)malloc(sizeof(ProcessInfo));
+        process->pid = pid;
+        process->isTerminated = 0; // Mark the process as not terminated
+        process->nooftimeslices = 0;
+        process->priority=prior;
+        printf("Process with pid:%d has priority %d\n",pid,prior);
+        // Record the start time
+        if (clock_gettime(CLOCK_MONOTONIC, &(process->startTime)) == -1) {
+            perror("clock_gettime");
+        }
 
-void scheduler_main(int NCPU,int TSLICE){
-    int fd = open("/home/flameblazer/Documents/SimpleShell/new.txt", O_WRONLY | O_CREAT, 0666);
-    write(fd,"hellobhai",sizeof("hellobhai"));
-    printf("are yaar");
-    struct sigaction sa;
-    sa.sa_flags = SA_SIGINFO;
-    sa.sa_sigaction = addProcessHandler;
-    sigaction(SIG_ADD_PROCESS, &sa, NULL);
-    readyQueue = initQueue();
-    int z=0;
-    int executingProcesses[MAX_PROCESSES] = {0};
-    while (1){
-        if (isEmpty(readyQueue)) {
-            // No processes in the ready queue, so sleep for the time quantum
-            sleep(TSLICE * 1000);
-        } 
-        else {
-            // For all available CPU resources
-            sleep(TSLICE * 1000);
-            int i;
-            for (i = 0; i < NCPU && !isEmpty(readyQueue); i++) {
-                int pid = dequeue(readyQueue);
-                scheduleProcess(pid);
-                executingProcesses[i] = pid;
-            }
-            fflush(stdout);
-            sleep(TSLICE * 1000);
-            for (int i=readyQueue->front;i<readyQueue->size;i++){
-                     printf("PID: %d\n",readyQueue->array[i]);
-            }
-            fflush(stdout);
-            // Stop the processes and add them back to the ready queue
-            for (i = 0; i < NCPU; i++) {
-                if (executingProcesses[i] != 0) {
-                    stopProcess(executingProcesses[i]);
-                    enqueue(readyQueue, executingProcesses[i]);
-                    executingProcesses[i] = 0;
-                }
-            }
-            fflush(stdout);
+        // Enqueue the process into the appropriate priority queue
+        if (process->priority == 1) {
+            enqueue(readyQueue1, process);
+        } else if (process->priority == 2) {
+            enqueue(readyQueue2, process);
+        } else if (process->priority == 3) {
+            enqueue(readyQueue3, process);
+        } else if (process->priority == 4) {
+            enqueue(readyQueue4, process);
+        } else {
+            // Handle invalid priority
+            fprintf(stderr, "Invalid priority for PID %d\n", pid);
+            free(process);
         }
     }
-            // Sleep for the time quantum (TSLICE) while waiting for processes to execute.
-// Sleep for the time quantum.
 }
-    
+
+
+void terminationHandler(int signo, siginfo_t *info, void *context) {
+    printf("ARFREE BHAI MUJHE BHI LO!\n");
+    int terminated_pid = info->si_value.sival_int;
+    printf("Process %d termination signal has been caught!",terminated_pid);
+
+    for (int i = 0; i < MAX_PROCESSES; i++) {
+        if (executingProcesses[i].pid!=-1){
+            if (executingProcesses[i].pid==terminated_pid){
+                executingProcesses[i].isTerminated=1;
+                if (clock_gettime(CLOCK_MONOTONIC, &(executingProcesses[i].endTime)) == -1) {
+                      perror("clock_gettime");
+                }
+                printf("Process with PID %d has terminated.\n", terminated_pid);
+                break;
+            }
+        }
+    }
+}
+
+
+void scheduler_main(int NCPU,int TSLICE){
+    struct sigaction sa_add_process; // Variable for handling SIG_ADD_PROCESS
+    sa_add_process.sa_flags = SA_SIGINFO;
+    sa_add_process.sa_sigaction = addProcessHandler;
+    sigaction(SIG_ADD_PROCESS, &sa_add_process, NULL);
+
+    struct sigaction sa_termination; // Variable for handling SIGUSR2
+    sa_termination.sa_flags = SA_SIGINFO;
+    sa_termination.sa_sigaction = terminationHandler;
+    sigaction(SIGUSR2, &sa_termination, NULL);
+
+    readyQueue1 = initQueue();
+    readyQueue2 = initQueue();
+    readyQueue3 = initQueue();
+    readyQueue4 = initQueue();
+
+    int z=0;
+    for (int i = 0; i < MAX_PROCESSES; i++) {
+            executingProcesses[i].pid = -1;
+            executingProcesses[i].isTerminated=-1;
+    // You may set other fields to their default values here if needed
+    }   
+
+    while (1){
+            // For all available CPU resources
+            int i;
+            int count = 0;
+           for (i = 0; i < NCPU; i++) {
+            // Try to dequeue from the highest-priority queue first
+            ProcessInfo pid;
+
+            if (!isEmpty(readyQueue4)) {
+                pid = dequeue(readyQueue4);
+            } else if (!isEmpty(readyQueue3)) {
+                pid = dequeue(readyQueue3);
+            } else if (!isEmpty(readyQueue2)) {
+                pid = dequeue(readyQueue2);
+            } else if (!isEmpty(readyQueue1)) {
+                pid = dequeue(readyQueue1);
+            } else {
+                break;  // No more processes to schedule
+            }
+
+            scheduleProcess(&pid);
+            executingProcesses[i] = pid;
+            count++;
+        }
+
+            fflush(stdout);
+
+            int k=sleep(TSLICE);
+            while (k>0){
+                k = sleep(k);
+            }
+
+            fflush(stdout);
+        
+            // Stop the processes and add them back to the ready queue
+            
+    for (i = 0; i < min(NCPU, count); i++) {
+        stopProcess(&executingProcesses[i]);
+
+        if (!executingProcesses[i].isTerminated) {
+            // Enqueue the process back to its respective priority queue
+            int priority = executingProcesses[i].priority;
+            switch (priority) {
+                case 1:
+                    enqueue(readyQueue1, &executingProcesses[i]);
+                    break;
+                case 2:
+                    enqueue(readyQueue2, &executingProcesses[i]);
+                    break;
+                case 3:
+                    enqueue(readyQueue3, &executingProcesses[i]);
+                    break;
+                case 4:
+                    enqueue(readyQueue4, &executingProcesses[i]);
+                    break;
+                // Handle additional priorities as needed
+            }
+        }
+
+                    executingProcesses[i].pid = -1;
+                    executingProcesses[i].isTerminated = -1;
+        }
+        fflush(stdout);
+              // Sleep for the time quantum (TSLICE) while waiting for processes to execute.          // Sleep for the time quantum.
+    }
+}
