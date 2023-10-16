@@ -158,16 +158,15 @@ void addProcessHandler(int signo, siginfo_t *info, void *context) {
         printf("Pidtimesprority from shell: %d",pidtimespriority);
         int sch = getpid();
         printf("The scheduler pid: %d",sch);
-        //Just remember to make the necessary change in the
         int prior = (int)(pidtimespriority/sch);
         int pid = (int)pidtimespriority/prior;
         ProcessInfo* process = (ProcessInfo*)malloc(sizeof(ProcessInfo));
         process->pid = pid;
-        process->isTerminated = 0; // Mark the process as not terminated
+        process->isTerminated = 0; 
         process->nooftimeslices = 0;
         process->priority=prior;
-        printf("Process with pid:%d has priority %d\n",pid,prior);
-        // Record the start time
+
+      
         if (clock_gettime(CLOCK_MONOTONIC, &(process->startTime)) == -1) {
             perror("clock_gettime");
         }
@@ -182,7 +181,6 @@ void addProcessHandler(int signo, siginfo_t *info, void *context) {
         } else if (process->priority == 4) {
             enqueue(readyQueue4, process);
         } else {
-            // Handle invalid priority
             fprintf(stderr, "Invalid priority for PID %d\n", pid);
             free(process);
         }
@@ -191,7 +189,6 @@ void addProcessHandler(int signo, siginfo_t *info, void *context) {
 
 
 void terminationHandler(int signo, siginfo_t *info, void *context) {
-    printf("ARFREE BHAI MUJHE BHI LO!\n");
     int terminated_pid = info->si_value.sival_int;
     printf("Process %d termination signal has been caught!",terminated_pid);
 
@@ -230,11 +227,9 @@ void scheduler_main(int NCPU,int TSLICE){
     for (int i = 0; i < MAX_PROCESSES; i++) {
             executingProcesses[i].pid = -1;
             executingProcesses[i].isTerminated=-1;
-    // You may set other fields to their default values here if needed
     }   
 
     while (1){
-            // For all available CPU resources
             int i;
             int count = 0;
            for (i = 0; i < NCPU; i++) {
@@ -250,7 +245,7 @@ void scheduler_main(int NCPU,int TSLICE){
             } else if (!isEmpty(readyQueue1)) {
                 pid = dequeue(readyQueue1);
             } else {
-                break;  // No more processes to schedule
+                break; 
             }
 
             scheduleProcess(&pid);
@@ -259,21 +254,18 @@ void scheduler_main(int NCPU,int TSLICE){
         }
 
             fflush(stdout);
-
-            int k=sleep(TSLICE);
+            int k=sleep(TSLICE/1000);
             while (k>0){
                 k = sleep(k);
             }
 
             fflush(stdout);
-        
-            // Stop the processes and add them back to the ready queue
             
     for (i = 0; i < min(NCPU, count); i++) {
         stopProcess(&executingProcesses[i]);
 
         if (!executingProcesses[i].isTerminated) {
-            // Enqueue the process back to its respective priority queue
+            // Enqueue the process back to its respective priority queue if it is not terminated yet.
             int priority = executingProcesses[i].priority;
             switch (priority) {
                 case 1:
@@ -288,7 +280,6 @@ void scheduler_main(int NCPU,int TSLICE){
                 case 4:
                     enqueue(readyQueue4, &executingProcesses[i]);
                     break;
-                // Handle additional priorities as needed
             }
         }
 
