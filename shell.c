@@ -9,13 +9,27 @@
 #include "scheduler.h"
 
 int scheduler;
+int count_processhistory=0;
 
 #define MAX_HISTORY_SIZE 100
 #define MAX_COMMAND_LENGTH 500
 #define MAX_WORDS 64
 
+typedef struct {
+    char* command;
+    int pid;          // Process ID
+    struct timespec startTime;
+    struct timespec endTime;
+    double executiontime;
+    int priority;
+    int isTerminated; // Flag to indicate if the process has terminated
+} ProcessInfo;
+
+ProcessInfo arr[100]={0};
+
 struct timespec endTime;
 struct timespec startTime;
+
 typedef struct CommandHistory {
     int commandNo;
     char* command;
@@ -59,26 +73,73 @@ void addToHistory(int commandNo, char* command, struct timespec startTime, struc
     }
 }
 
+
+void sigint_handler(int signo) {
+    if (signo == SIGINT) {
+        for (int i=0;i<count_processhistory;i++){
+            printf("%d %d",arr[0].pid,arr[1].pid);
+            printf("**History**\n");
+            printf("Command: %s\n",arr[i].command);
+            printf("Pid: %d\n",arr[i].pid);
+            printf("Priority: %d\n",arr[i].priority);
+            printf("Executiontime: %.9f\n",arr[i].executiontime);
+        }
+    }
+    exit(0);
+}
+
+
 void sigchld_handler(int signo) {
     int status;
     pid_t terminated_pid;
-
     // Wait for any child process to exit
     terminated_pid = waitpid(-1, &status, WNOHANG);
+    for (int i=0;i<count_processhistory;i++){
+        if (arr[i].pid == terminated_pid){
+        clock_gettime(CLOCK_MONOTONIC, &arr[i].endTime);
+        struct timespec executionTime;
+        long seconds = arr[i].endTime.tv_sec - arr[i].startTime.tv_sec;
+        long nanoseconds = arr[i].endTime.tv_nsec - arr[i].startTime.tv_nsec;
 
-    if (terminated_pid > 0) {
+                                               // Ensure nanoseconds is positive
+        if (nanoseconds < 0) {
+            nanoseconds += 1000000000;       // 1 second in nanoseconds
+            seconds--;                      // Subtract one second
+        }
+
+        arr[i].executiontime=seconds + (nanoseconds / 1e9);
+        break;
+        }
+    }
+
+    if (terminated_pid > 0 && WIFEXITED(status)) {
         // Child process has terminated
         // Send a custom signal (e.g., SIGUSR1) to the scheduler
         union sigval value;
         value.sival_int = (int)terminated_pid;
-        sigqueue(scheduler, SIGUSR1, value);
+        sigqueue(scheduler, SIGUSR2, value);
     }
 }
 
 int launch(char** command, int words, int background) {
-     printf("%s %s\n",command[0],command[1]);
+    printf("%s %s\n",command[0],command[1]);
     if (strcmp(command[0],"Submit")==0){
-        printf("Atleast in!!");
+        ProcessInfo process;
+        clock_gettime(CLOCK_MONOTONIC, &process.startTime);
+         
+        int length = 0;
+
+        while (command[length] != NULL) {
+            length++;
+        }
+        printf("length: %d",length);
+        process.command=strdup(command[1]);
+        int priority=1;
+        if (length==3){
+           priority = atoi(command[2]);
+           printf("command[2]: %d",atoi(command[2]));
+        }
+        process.priority=priority;
         char *command_i[]={command[1],NULL};
         int pid = fork();
         if (pid<0){
@@ -90,11 +151,12 @@ int launch(char** command, int words, int background) {
             execvp(command[1],command_i);
         }
         //send signal to scheduler to add this newly created process to the ready queue.
-        printf("About to send the signal to the scheduler!");
+        process.pid=pid;
+        arr[count_processhistory]=process;
+        count_processhistory++;
         union sigval value;
-        value.sival_int = (int)pid;
+        value.sival_int = (int)(pid*priority);
         sigqueue(scheduler,SIGUSR1, value);
-        printf("Signal sent to the scheduler!");
         return 0;
     }
     // Measure start time using CLOCK_MONOTONIC
@@ -186,13 +248,16 @@ int launch(char** command, int words, int background) {
             }
         }
     }
-
     // Measure end time using CLOCK_MONOTONIC
     clock_gettime(CLOCK_MONOTONIC, &endTime);
 }
 
 
 int main(int argc, char* argv[]) {
+    if (signal(SIGINT, sigint_handler) == SIG_ERR) {
+        perror("Unable to register SIGINT handler");
+        exit(1);
+    }
 
     struct sigaction sa;
     sa.sa_handler = sigchld_handler;
