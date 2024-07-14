@@ -22,14 +22,15 @@ This project is a simple process scheduler written in C. It handles process sche
 
 The shell would run and prompt the user to enter commands
 
-Commands are any executable, also as an argument you can add the priority of a task, priorities can be from 1 - 4. 
+Commands are any executable, also as an argument you can add the priority of a task, priorities can be from 1 - 4.
+Add Submit to send the process to the scheduler to be scheduled.
 
 this argument is optional and default is 1.
 
 Examples : 
 
-- ls 3
+- Submit ls 3
 Puts the ls executable to be run with a priority of 3
 
-- ./fib
+-Submit ./fib
 Puts the ./fib executable to be run with a default priority of 1.
